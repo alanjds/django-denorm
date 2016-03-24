@@ -168,8 +168,17 @@ class TriggerSet(object):
             else:
                 self.triggers[name] = trigger
 
+    def installed_triggers(self):
+        """returns a list of (trigger_name, table_name) pairs"""
+        raise NotImplementedError
+
     def install(self):
+        """returns a list of triggers installed"""
         raise NotImplementedError
 
     def drop(self):
+        raise NotImplementedError
+
+    def drop_unneeded(self):
+        """drops installed triggers that wouldn't be installed today"""
         raise NotImplementedError

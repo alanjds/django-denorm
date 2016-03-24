@@ -107,12 +107,15 @@ CREATE TRIGGER %(name)s
 
 
 class TriggerSet(base.TriggerSet):
+    def installed_triggers(self):
+        cursor = self.cursor()
+        cursor.execute("SELECT name, tbl_name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'denorm_%%';")
+        return cursor.fetchall()
+
     def drop_atomic(self):
         qn = self.connection.ops.quote_name
         cursor = self.cursor()
-
-        cursor.execute("SELECT name, tbl_name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'denorm_%%';")
-        for trigger_name, table_name in cursor.fetchall():
+        for trigger_name, table_name in self.installed_triggers():
             cursor.execute("DROP TRIGGER %s;" % (qn(trigger_name),))
 
     def drop(self):
@@ -123,17 +126,39 @@ class TriggerSet(base.TriggerSet):
             self.drop_atomic()
             transaction.commit_unless_managed(using=self.using)
 
+    def drop_unneeded_atomic(self):
+        qn = self.connection.ops.quote_name
+        cursor = self.cursor()
+        needed_triggers = self.triggers.keys()
+        for trigger_name, table_name in self.installed_triggers():
+            if trigger_name in needed_triggers:
+                continue
+            cursor.execute('DROP TRIGGER %s;' % (qn(trigger_name),))
+
+    def drop_unneeded(self):
+        try:
+            with transaction.atomic():
+                self.drop_unneeded_atomic()
+        except AttributeError:
+            self.drop_unneeded_atomic()
+            transaction.commit_unless_managed(using=self.using)
+
     def install_atomic(self):
         cursor = self.cursor()
-
+        installed_triggers = self.installed_triggers()
+        installed_triggers = zip(*installed_triggers)[0]  # get just the names
         for name, trigger in self.triggers.items():
+            if name in installed_triggers:
+                continue
             sql, args = trigger.sql()
             cursor.execute(sql, args)
+            yield trigger
 
     def install(self):
         try:
             with transaction.atomic():
-                self.install_atomic()
+                ret = list(self.install_atomic())
         except AttributeError:
-            self.install_atomic()
+            ret = list(self.install_atomic())
             transaction.commit_unless_managed(using=self.using)
+        return ret

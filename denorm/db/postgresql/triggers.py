@@ -135,9 +135,31 @@ class TriggerSet(base.TriggerSet):
     def drop_atomic(self):
         qn = self.connection.ops.quote_name
         cursor = self.cursor()
-        cursor.execute("SELECT pg_class.relname, pg_trigger.tgname FROM pg_trigger LEFT JOIN pg_class ON (pg_trigger.tgrelid = pg_class.oid) WHERE pg_trigger.tgname LIKE 'denorm_%%';")
-        for table_name, trigger_name in cursor.fetchall():
+        for trigger_name, table_name in self.installed_triggers():
             cursor.execute('DROP TRIGGER %s ON %s;' % (qn(trigger_name), qn(table_name)))
+
+    def drop_unneeded_atomic(self):
+        qn = self.connection.ops.quote_name
+        cursor = self.cursor()
+        needed_triggers = self.triggers.keys()
+        for trigger_name, table_name in self.installed_triggers():
+            if trigger_name in needed_triggers:
+                continue
+            print 'Dropping trigger on %s' % table_name
+            cursor.execute('DROP TRIGGER %s ON %s;' % (qn(trigger_name), qn(table_name)))
+
+    def drop_unneeded(self):
+        try:
+            with transaction.atomic():
+                self.drop_unneeded_atomic()
+        except AttributeError:
+            self.drop_unneeded_atomic()
+            transaction.commit_unless_managed(using=self.using)
+
+    def installed_triggers(self):
+        cursor = self.cursor()
+        cursor.execute("SELECT pg_trigger.tgname, pg_class.relname FROM pg_trigger LEFT JOIN pg_class ON (pg_trigger.tgrelid = pg_class.oid) WHERE pg_trigger.tgname LIKE 'denorm_%%';")
+        return cursor.fetchall()
 
     def drop(self):
         try:
@@ -152,14 +174,20 @@ class TriggerSet(base.TriggerSet):
         cursor.execute("SELECT lanname FROM pg_catalog.pg_language WHERE lanname ='plpgsql'")
         if not cursor.fetchall():
             cursor.execute('CREATE LANGUAGE plpgsql')
+        installed_triggers = self.installed_triggers()
+        installed_triggers = zip(*installed_triggers)[0]  # get just the names
         for name, trigger in self.triggers.items():
+            if name in installed_triggers:
+                continue
             sql, args = trigger.sql()
             cursor.execute(sql, args)
+            yield trigger
 
     def install(self):
         try:
             with transaction.atomic():
-                self.install_atomic()
+                ret = list(self.install_atomic())
         except AttributeError:
-            self.install_atomic()
+            ret = self.install_atomic()
             transaction.commit_unless_managed(using=self.using)
+        return ret
