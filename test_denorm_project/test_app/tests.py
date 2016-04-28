@@ -708,3 +708,12 @@ class CommandsTestCase(TransactionTestCase):
             args = []
             opts = {}
             call_command('makemigrations', *args, **opts)
+
+
+class UpdateTriggersOnModelChangesTestCase(TransactionTestCase):
+    def setUp(self):
+        call_command('migrate', 'test_app', '0001_initial')
+
+    def test_denorm_migrate(self):
+        call_command('migrate', 'test_app')
+        call_command('denorm_migrate')
