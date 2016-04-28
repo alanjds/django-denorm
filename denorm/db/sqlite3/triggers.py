@@ -146,7 +146,8 @@ class TriggerSet(base.TriggerSet):
     def install_atomic(self):
         cursor = self.cursor()
         installed_triggers = self.installed_triggers()
-        installed_triggers = zip(*installed_triggers)[0]  # get just the names
+        if len(installed_triggers) > 0:
+            installed_triggers = zip(*installed_triggers)[0]  # get just the names
         for name, trigger in self.triggers.items():
             if name in installed_triggers:
                 continue
