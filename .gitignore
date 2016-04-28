@@ -1,6 +1,7 @@
 *.pyc
 *.swp
 *.swo
+*.coverage
 example.db
 *~
 example/photos

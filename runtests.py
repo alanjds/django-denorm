@@ -5,7 +5,11 @@ import os
 try:
     dbtypes = [sys.argv[1]]
 except:
-    dbtypes = ['sqlite', 'mysql', 'postgres', 'postgis']
+    dbtypes = ['sqlite', 'postgres'] # , 'mysql', 'postgis']
+
+if 'postgres' in dbtypes and os.system("createdb denorm_test"):
+    print('Failed to create postgres db')
+    exit(1)
 
 os.environ['PYTHONPATH'] = '.:..:test_denorm_project:../denorm:test_app'
 
@@ -15,4 +19,8 @@ for dbtype in dbtypes:
 
     test_label = sys.argv[2] if len(sys.argv) > 2 else "test_app"
     if os.system("cd test_denorm_project; coverage run manage.py test %s" % test_label):
+        os.system("dropdb denorm_test")
         exit(1)
+
+if 'postgres' in dbtypes:
+    os.system("dropdb denorm_test")
