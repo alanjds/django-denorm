@@ -117,31 +117,16 @@ class TriggerSet(base.TriggerSet):
             if result[0].startswith('denorm_'):
                 yield (result[0], result[2])
 
-    def drop_unneeded(self):
-        qn = self.connection.ops.quote_name
+    def drop_trigger(self, trigger_name, table_name):
         cursor = self.cursor()
-        needed_triggers = self.triggers.keys()
-        for name, table_name in self.installed_triggers():
-            if name in needed_triggers:
-                continue
-            cursor.execute('DROP TRIGGER %s;' % qn(name))
+        qn = self.connection.ops.quote_name
+        cursor.execute('DROP TRIGGER %s;' % qn(trigger_name))
 
     def drop(self):
-        qn = self.connection.ops.quote_name
-        cursor = self.cursor()
-        for name, table_name in self.installed_triggers():
-            cursor.execute('DROP TRIGGER %s;' % qn(name))
+        return self.drop_atomic()
 
     def install(self):
-        cursor = self.cursor()
-        ret = []
-        installed_triggers = self.installed_triggers()
-        if len(installed_triggers) > 0:
-            installed_triggers = zip(*installed_triggers)[0]  # get just the names
-        for name, trigger in self.triggers.items():
-            if name in installed_triggers:
-                continue
-            sql, args = trigger.sql()
-            cursor.execute(sql, args)
-            ret.append(trigger)
-        return ret
+        return list(install_atomic())
+
+    def drop_unneeded(self):
+        return drop_unneeded_atomic()

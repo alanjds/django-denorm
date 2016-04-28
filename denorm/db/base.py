@@ -1,4 +1,9 @@
-from django.db import models, connections, connection
+from django.db import (
+    connection,
+    connections,
+    models,
+    transaction,
+)
 from ..helpers import remote_field_model
 
 
@@ -172,13 +177,55 @@ class TriggerSet(object):
         """returns a list of (trigger_name, table_name) pairs"""
         raise NotImplementedError
 
-    def install(self):
-        """returns a list of triggers installed"""
+    def drop_trigger(self, trigger_name, table_name):
+        """executes the command to drop the given trigger"""
         raise NotImplementedError
 
-    def drop(self):
-        raise NotImplementedError
+    def drop_unneeded_atomic(self):
+        needed_triggers = self.triggers.keys()
+        for name, table_name in self.installed_triggers():
+            if name in needed_triggers:
+                continue
+            print 'Dropping a trigger on %s' % table_name
+            self.drop_trigger(name, table_name)
 
     def drop_unneeded(self):
-        """drops installed triggers that wouldn't be installed today"""
-        raise NotImplementedError
+        try:
+            with transaction.atomic():
+                self.drop_unneeded_atomic()
+        except AttributeError:
+            self.drop_unneeded_atomic()
+            transaction.commit_unless_managed(using=self.using)
+
+    def drop_atomic(self):
+        for trigger_name, table_name in self.installed_triggers():
+            self.drop_trigger(trigger_name, table_name)
+
+    def drop(self):
+        try:
+            with transaction.atomic():
+                self.drop_atomic()
+        except AttributeError:
+            self.drop_atomic()
+            transaction.commit_unless_managed(using=self.using)
+
+    def install_atomic(self):
+        cursor = self.cursor()
+        installed_triggers = self.installed_triggers()
+        if len(installed_triggers) > 0:
+            installed_triggers = zip(*installed_triggers)[0]  # get just the names
+        for name, trigger in self.triggers.items():
+            if name in installed_triggers:
+                continue
+            sql, args = trigger.sql()
+            cursor.execute(sql, args)
+            yield trigger
+
+    def install(self):
+        try:
+            with transaction.atomic():
+                ret = list(self.install_atomic())
+        except AttributeError:
+            ret = list(self.install_atomic())
+            transaction.commit_unless_managed(using=self.using)
+        return ret
