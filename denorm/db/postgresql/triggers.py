@@ -132,34 +132,21 @@ CREATE TRIGGER %(name)s
 
 
 class TriggerSet(base.TriggerSet):
-    def drop_atomic(self):
+    def cursor(self):
+        if not hasattr(self, '_cursor'):
+            cursor = super(TriggerSet, self).cursor()
+            cursor.execute("SELECT lanname FROM pg_catalog.pg_language WHERE lanname ='plpgsql'")
+            if not cursor.fetchall():
+                cursor.execute('CREATE LANGUAGE plpgsql')
+            self._cursor = cursor
+        return self._cursor
+
+    def drop_trigger(self, trigger_name, table_name):
         qn = self.connection.ops.quote_name
         cursor = self.cursor()
-        cursor.execute("SELECT pg_class.relname, pg_trigger.tgname FROM pg_trigger LEFT JOIN pg_class ON (pg_trigger.tgrelid = pg_class.oid) WHERE pg_trigger.tgname LIKE 'denorm_%%';")
-        for table_name, trigger_name in cursor.fetchall():
-            cursor.execute('DROP TRIGGER %s ON %s;' % (qn(trigger_name), qn(table_name)))
+        cursor.execute('DROP TRIGGER %s ON %s;' % (qn(trigger_name), qn(table_name)))
 
-    def drop(self):
-        try:
-            with transaction.atomic():
-                self.drop_atomic()
-        except AttributeError:
-            self.drop_atomic()
-            transaction.commit_unless_managed(using=self.using)
-
-    def install_atomic(self):
+    def installed_triggers(self):
         cursor = self.cursor()
-        cursor.execute("SELECT lanname FROM pg_catalog.pg_language WHERE lanname ='plpgsql'")
-        if not cursor.fetchall():
-            cursor.execute('CREATE LANGUAGE plpgsql')
-        for name, trigger in self.triggers.items():
-            sql, args = trigger.sql()
-            cursor.execute(sql, args)
-
-    def install(self):
-        try:
-            with transaction.atomic():
-                self.install_atomic()
-        except AttributeError:
-            self.install_atomic()
-            transaction.commit_unless_managed(using=self.using)
+        cursor.execute("SELECT pg_trigger.tgname, pg_class.relname FROM pg_trigger LEFT JOIN pg_class ON (pg_trigger.tgrelid = pg_class.oid) WHERE pg_trigger.tgname LIKE 'denorm_%%';")
+        return cursor.fetchall()

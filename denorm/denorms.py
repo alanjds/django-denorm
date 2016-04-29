@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import abc
+from collections import defaultdict
 
 from django.contrib import contenttypes
 from django.db import connections, connection
@@ -544,12 +545,21 @@ class CountDenorm(AggregateDenorm):
         return self.get_decrement_value(using)
 
 
+def dirty_entire_model(model):
+    from .models import DirtyInstance
+    content_type = contenttypes.models.ContentType.objects.get_for_model(model)
+    for instance in model.objects.all():
+        DirtyInstance.objects.create(
+            content_type=content_type,
+            object_id=instance.pk,
+        )
+
+
 def rebuildall(verbose=False, model_name=None, field_name=None):
     """
     Updates all models containing denormalized fields.
     Used by the 'denormalize' management command.
     """
-    from .models import DirtyInstance
     alldenorms = get_alldenorms()
     models = {}
     for denorm in alldenorms:
@@ -571,12 +581,7 @@ def rebuildall(verbose=False, model_name=None, field_name=None):
                 print(msg)
                 i += 1
         # create DirtyInstance for all objects, so the rebuild is done during flush
-        content_type = contenttypes.models.ContentType.objects.get_for_model(model)
-        for instance in model.objects.all():
-                DirtyInstance.objects.create(
-                    content_type=content_type,
-                    object_id=instance.pk,
-                )
+        dirty_entire_model(model)
     flush(verbose)
 
 
@@ -602,6 +607,34 @@ def build_triggerset(using=None):
     for denorm in alldenorms:
         triggerset.append(denorm.get_triggers(using=using))
     return triggerset
+
+
+def smart_db_refresh(using=None):
+    """
+    Drops any triggers that are no longer needed and
+    Installs any triggers that are newly needed and
+    Dirties all effected objects
+    """
+    from .models import DirtyInstance
+    from .db import triggers
+    alldenorms = get_alldenorms()
+    trigger_to_models_map = defaultdict(set)
+    triggerset = triggers.TriggerSet(using=using)
+    for denorm in alldenorms:
+        triggers = denorm.get_triggers(using=using)
+        triggerset.append(triggers)
+        for trigger in triggers:
+            trigger_to_models_map[trigger.name()].add(denorm.model)
+    triggerset.drop_unneeded()
+    added_triggers = triggerset.install()
+    models_to_dirty = set()
+    for trigger in added_triggers:
+        for model in trigger_to_models_map[trigger.name()]:
+            models_to_dirty.add(model)
+    for model in models_to_dirty:
+        print 'Added triggers for and recomputing %s' % model
+        dirty_entire_model(model)
+    flush(verbose=True)
 
 
 def flush(verbose=False):

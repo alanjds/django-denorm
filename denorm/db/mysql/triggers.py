@@ -107,20 +107,26 @@ CREATE TRIGGER %(name)s
 
 
 class TriggerSet(base.TriggerSet):
-    def drop(self):
-        qn = self.connection.ops.quote_name
+    def installed_triggers(self):
         cursor = self.cursor()
-
         # FIXME: according to MySQL docs the LIKE statement should work
         # but it doesn't. MySQL reports a Syntax Error
         #cursor.execute(r"SHOW TRIGGERS WHERE Trigger LIKE 'denorm_%%'")
         cursor.execute('SHOW TRIGGERS')
         for result in cursor.fetchall():
             if result[0].startswith('denorm_'):
-                cursor.execute('DROP TRIGGER %s;' % qn(result[0]))
+                yield (result[0], result[2])
+
+    def drop_trigger(self, trigger_name, table_name):
+        cursor = self.cursor()
+        qn = self.connection.ops.quote_name
+        cursor.execute('DROP TRIGGER %s;' % qn(trigger_name))
+
+    def drop(self):
+        return self.drop_atomic()
 
     def install(self):
-        cursor = self.cursor()
-        for name, trigger in self.triggers.items():
-            sql, args = trigger.sql()
-            cursor.execute(sql, args)
+        return list(install_atomic())
+
+    def drop_unneeded(self):
+        return drop_unneeded_atomic()

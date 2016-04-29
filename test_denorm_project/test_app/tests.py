@@ -701,10 +701,11 @@ class CommandsTestCase(TransactionTestCase):
 
         call_command('denorm_daemon', run_once=True, foreground=True)
 
-    if Decimal('.'.join([str(i) for i in django.VERSION[:2]])) >= Decimal('1.7'):
-        def test_makemigrations(self):
-            " Test makemigrations command."
 
-            args = []
-            opts = {}
-            call_command('makemigrations', *args, **opts)
+class UpdateTriggersOnModelChangesTestCase(TransactionTestCase):
+    def setUp(self):
+        call_command('migrate', 'test_app', '0001_initial')
+
+    def test_denorm_migrate(self):
+        call_command('migrate', 'test_app')
+        call_command('denorm_migrate')
