@@ -16,6 +16,8 @@ class DenormMiddleware(object):
     after ``TransactionMiddleware`` in your ``MIDDLEWARE_CLASSES`` setting.
     """
     def process_response(self, request, response):
+        if request.method == 'GET':
+            return response
         try:
             flush()
         except DatabaseError as e:
