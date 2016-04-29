@@ -610,6 +610,11 @@ def build_triggerset(using=None):
 
 
 def smart_db_refresh(using=None):
+    """
+    Drops any triggers that are no longer needed and
+    Installs any triggers that are newly needed and
+    Dirties all effected objects
+    """
     from .models import DirtyInstance
     from .db import triggers
     alldenorms = get_alldenorms()
