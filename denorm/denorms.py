@@ -619,6 +619,10 @@ def flush(verbose=False):
         # Get all dirty markers
         from .models import DirtyInstance
         qs = DirtyInstance.objects.all()
+        try:  # If possible, dont flush the same object twice
+            qs = qs.distinct('content_type', 'object_id')
+        except NotImplementedError:  # SQLite does not suport DISTINCT ON
+            pass
 
         # DirtyInstance table is empty -> all data is consistent -> we're done
         if not qs:
